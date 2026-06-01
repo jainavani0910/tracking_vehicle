@@ -22,6 +22,7 @@ const vehicleRoutes = require('./routes/vehicleRoutes');
 app.use('/api/vehicles', vehicleRoutes);
 
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || 'localhost';
 
 app.get('/', (req, res) => {
   res.send('Real-time Vehicle Tracking Backend — AutoTrack AI');
@@ -51,7 +52,7 @@ const startServer = () => {
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`[Server] ✅ Running on http://0.0.0.0:${PORT}`);
-    console.log(`[Server] 📡 Accessible at http://192.168.1.26:${PORT}`);
+    console.log(`[Server] 📡 Accessible at http://${HOST}:${PORT}`);
     console.log(`[Server] Mode: ${isRedisAvailable() ? 'Redis + Kafka' : 'In-memory fallback (Kafka/Redis optional)'}`);
   });
 

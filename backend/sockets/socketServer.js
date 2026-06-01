@@ -1,7 +1,7 @@
-const { Server } = require('socket.io');
-const redisClient = require('../redis/redisClient');
-const { isRedisAvailable } = require('../redis/redisClient');
-const vehicleStore = require('../services/vehicleStore');
+const { Server } = require("socket.io");
+const redisClient = require("../redis/redisClient");
+const { isRedisAvailable } = require("../redis/redisClient");
+const vehicleStore = require("../services/vehicleStore");
 
 let io;
 const subscribedSockets = new Map();
@@ -10,35 +10,42 @@ const BATCH_INTERVAL = 1000; // ms
 const initializeSocketServer = (server) => {
   io = new Server(server, {
     cors: {
-      origin: '*',
-      methods: ['GET', 'POST'],
+      origin: "*",
+      methods: ["GET", "POST"],
     },
     pingInterval: 10000,
     pingTimeout: 5000,
   });
 
-  io.on('connection', (socket) => {
+  io.on("connection", (socket) => {
     console.log(`[WebSocket] Client connected: ${socket.id}`);
 
-    socket.on('subscribeToViewport', (data) => {
+    socket.on("subscribeToViewport", (data) => {
       try {
         if (!data) return;
-        subscribedSockets.set(socket.id, { socket, ...data, lastPing: Date.now() });
+        subscribedSockets.set(socket.id, {
+          socket,
+          ...data,
+          lastPing: Date.now(),
+        });
       } catch (err) {
-        console.error(`[WebSocket] subscribeToViewport error from ${socket.id}:`, err.message);
+        console.error(
+          `[WebSocket] subscribeToViewport error from ${socket.id}:`,
+          err.message,
+        );
       }
     });
 
-    socket.on('ping', (cb) => {
-      if (typeof cb === 'function') cb({ timestamp: Date.now() });
+    socket.on("ping", (cb) => {
+      if (typeof cb === "function") cb({ timestamp: Date.now() });
     });
 
-    socket.on('disconnect', (reason) => {
+    socket.on("disconnect", (reason) => {
       console.log(`[WebSocket] Client disconnected: ${socket.id} (${reason})`);
       subscribedSockets.delete(socket.id);
     });
 
-    socket.on('error', (err) => {
+    socket.on("error", (err) => {
       console.error(`[WebSocket] Socket ${socket.id} error:`, err.message);
     });
   });
@@ -72,7 +79,10 @@ const startBatching = () => {
         try {
           dispatchFromMemory(socket, tiles);
         } catch (memErr) {
-          console.error(`[WebSocket] Dispatch failed for ${socketId}:`, memErr.message);
+          console.error(
+            `[WebSocket] Dispatch failed for ${socketId}:`,
+            memErr.message,
+          );
         }
       }
     }
@@ -85,7 +95,7 @@ const dispatchFromRedis = async (socket, tiles) => {
   const allVehicles = new Map();
 
   for (const tileStr of tiles) {
-    const [z, x, y] = tileStr.split('/').map(Number);
+    const [z, x, y] = tileStr.split("/").map(Number);
     if (isNaN(z) || isNaN(x) || isNaN(y)) continue;
 
     const nLat = tile2lat(y, z);
@@ -98,14 +108,17 @@ const dispatchFromRedis = async (socket, tiles) => {
 
     try {
       const vehicleIds = await redisClient.geoSearchWith(
-        'vehicles',
+        "vehicles",
         { longitude: (wLon + eLon) / 2, latitude: (sLat + nLat) / 2 },
-        { width, height, unit: 'km' },
-        ['WITHCOORD']
+        { width, height, unit: "km" },
+        ["WITHCOORD"],
       );
 
       if (vehicleIds && vehicleIds.length > 0) {
-        const details = await redisClient.hmGet('vehicle_details', vehicleIds.map((v) => v.member));
+        const details = await redisClient.hmGet(
+          "vehicle_details",
+          vehicleIds.map((v) => v.member),
+        );
         details.forEach((detail, i) => {
           if (!detail) return;
           const parsed = JSON.parse(detail);
@@ -119,12 +132,26 @@ const dispatchFromRedis = async (socket, tiles) => {
       }
     } catch (err) {
       // Tile-level fallback: merge from memory for this tile
-      const memVehicles = vehicleStore.getVehiclesInBounds(sLat, wLon, nLat, eLon);
+      const memVehicles = vehicleStore.getVehiclesInBounds(
+        sLat,
+        wLon,
+        nLat,
+        eLon,
+      );
       memVehicles.forEach((v) => allVehicles.set(v.id, v));
     }
   }
 
-  socket.emit('vehicleUpdates', Array.from(allVehicles.values()));
+  console.log("dispatchFromRedis called");
+
+  const all = await redisClient.hGetAll("vehicle_details");
+
+  console.log("Redis vehicles count:", Object.keys(all).length);
+  const vehicles = Object.values(all)
+    .slice(0, 20)
+    .map((v) => JSON.parse(v));
+
+  socket.emit("vehicleUpdates", vehicles);
 };
 
 // ─── In-memory dispatch (no Redis) ────────────────────────────────────────────
@@ -133,7 +160,7 @@ const dispatchFromMemory = (socket, tiles) => {
   const allVehicles = new Map();
 
   for (const tileStr of tiles) {
-    const [z, x, y] = tileStr.split('/').map(Number);
+    const [z, x, y] = tileStr.split("/").map(Number);
     if (isNaN(z) || isNaN(x) || isNaN(y)) continue;
 
     const nLat = tile2lat(y, z);
@@ -145,7 +172,7 @@ const dispatchFromMemory = (socket, tiles) => {
     vehicles.forEach((v) => allVehicles.set(v.id, v));
   }
 
-  socket.emit('vehicleUpdates', Array.from(allVehicles.values()));
+  socket.emit("vehicleUpdates", Array.from(allVehicles.values()));
 };
 
 // ─── Geo helpers ───────────────────────────────────────────────────────────────

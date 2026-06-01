@@ -6,14 +6,39 @@ const vehicleStore = require('../services/vehicleStore');
 const router = express.Router();
 
 // ─── GET /api/vehicles (get all vehicles) ──────────────────────────────────────
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
+    if (isRedisAvailable()) {
+      const vehicles =
+        await redisClient.hGetAll('vehicle_details');
+
+      const result = Object.values(vehicles).map((v) =>
+        JSON.parse(v)
+      );
+
+      console.log(
+        `[API] Returning ${result.length} vehicles from Redis`
+      );
+
+      return res.json(result);
+    }
+
     const allVehicles = vehicleStore.getAllVehicles();
-    console.log(`[API] Returning ${allVehicles.length} vehicles`);
-    res.json(allVehicles);
+
+    console.log(
+      `[API] Returning ${allVehicles.length} vehicles from Memory`
+    );
+
+    return res.json(allVehicles);
   } catch (error) {
-    console.error('[API] Failed to fetch all vehicles:', error);
-    res.status(500).json({ error: 'Failed to fetch vehicles' });
+    console.error(
+      '[API] Failed to fetch all vehicles:',
+      error
+    );
+
+    return res.status(500).json({
+      error: 'Failed to fetch vehicles',
+    });
   }
 });
 
@@ -62,6 +87,21 @@ router.get('/:id/history', async (req, res) => {
   }
 });
 
+router.get("/redis-test", async (req, res) => {
+  try {
+    const all = await redisClient.hGetAll("vehicle_details");
+
+    res.json({
+      count: Object.keys(all).length,
+      sampleKeys: Object.keys(all).slice(0, 5),
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: err.message,
+    });
+  }
+});
+
 // ─── GET /api/vehicles/:id ────────────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
@@ -79,5 +119,8 @@ router.get('/:id', async (req, res) => {
     return res.status(500).json({ error: 'Failed to fetch vehicle' });
   }
 });
+
+
+
 
 module.exports = router;

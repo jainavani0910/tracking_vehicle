@@ -1,25 +1,25 @@
-const { Kafka } = require('kafkajs');
-const redisClient = require('../redis/redisClient');
-const { isRedisAvailable } = require('../redis/redisClient');
-const vehicleStore = require('../services/vehicleStore');
-require('dotenv').config();
+const { Kafka } = require("kafkajs");
+const redisClient = require("../redis/redisClient");
+const { isRedisAvailable } = require("../redis/redisClient");
+const vehicleStore = require("../services/vehicleStore");
+require("dotenv").config();
 
-const KAFKA_BROKER = process.env.KAFKA_BROKERS || 'localhost:9092';
-const TOPIC_NAME = 'vehicle-updates';
+const KAFKA_BROKER = process.env.KAFKA_BROKERS || "localhost:9092";
+const TOPIC_NAME = "vehicle-updates";
 
 const kafka = new Kafka({
-  clientId: 'vehicle-tracking-consumer',
-  brokers: KAFKA_BROKER.split(','),
-  connectionTimeout: 1500,  // Fail within 1.5s
+  clientId: "vehicle-tracking-consumer",
+  brokers: KAFKA_BROKER.split(","),
+  connectionTimeout: 1500, // Fail within 1.5s
   requestTimeout: 3000,
   retry: {
     initialRetryTime: 100,
-    retries: 0,             // No retries — fail fast
+    retries: 0, // No retries — fail fast
   },
   logLevel: 1, // ERROR only
 });
 
-const consumer = kafka.consumer({ groupId: 'vehicle-tracking-group' });
+const consumer = kafka.consumer({ groupId: "vehicle-tracking-group" });
 let _consumerConnected = false;
 
 const connectConsumer = async () => {
@@ -27,13 +27,13 @@ const connectConsumer = async () => {
     console.log(`[Kafka Consumer] Connecting to ${KAFKA_BROKER}...`);
     await consumer.connect();
     _consumerConnected = true;
-    console.log('[Kafka Consumer] ✅ Connected.');
+    console.log("[Kafka Consumer] ✅ Connected.");
 
     // Clear stale Redis keys
     if (isRedisAvailable()) {
       try {
-        await redisClient.del('vehicles');
-        await redisClient.del('vehicle_details');
+        await redisClient.del("vehicles");
+        await redisClient.del("vehicle_details");
       } catch (_) {}
     }
 
@@ -50,32 +50,51 @@ const connectConsumer = async () => {
           vehicleStore.updateVehicle(vehicle);
 
           // Update Redis if available
+          // Update Redis if available
           if (isRedisAvailable()) {
             try {
-              await redisClient.geoAdd('vehicles', {
-                longitude: vehicle.longitude,
-                latitude: vehicle.latitude,
+              await redisClient.geoAdd("vehicles", {
+                longitude: Number(vehicle.longitude),
+                latitude: Number(vehicle.latitude),
                 member: vehicle.id,
               });
-              await redisClient.hSet('vehicle_details', vehicle.id, JSON.stringify(vehicle));
+
+              await redisClient.hSet(
+                "vehicle_details",
+                vehicle.id,
+                JSON.stringify(vehicle),
+              );
+
+
               const histKey = `vehicle_history:${vehicle.id}`;
-              await redisClient.lPush(histKey, JSON.stringify({
-                latitude: vehicle.latitude,
-                longitude: vehicle.longitude,
-                speed: vehicle.speed,
-                heading: vehicle.heading,
-                timestamp: vehicle.timestamp || new Date().toISOString(),
-              }));
+
+              await redisClient.lPush(
+                histKey,
+                JSON.stringify({
+                  latitude: vehicle.latitude,
+                  longitude: vehicle.longitude,
+                  speed: vehicle.speed,
+                  heading: vehicle.heading,
+                  timestamp: vehicle.timestamp || new Date().toISOString(),
+                }),
+              );
+
               await redisClient.lTrim(histKey, 0, 19);
-            } catch (_) {}
+            } catch (err) {
+              console.error("[Consumer Redis Error]", err.message);
+            }
+          } else {
+            console.warn("[Consumer] Redis not available");
           }
         } catch (err) {
-          console.error('[Kafka Consumer] Message error:', err.message);
+          console.error("[Kafka Consumer] Message error:", err.message);
         }
       },
     });
   } catch (err) {
-    console.warn(`[Kafka Consumer] ⚠️  Unavailable (${err.message.split('\n')[0]}). Vehicle data served from in-memory store.`);
+    console.warn(
+      `[Kafka Consumer] ⚠️  Unavailable (${err.message.split("\n")[0]}). Vehicle data served from in-memory store.`,
+    );
     _consumerConnected = false;
     throw err;
   }

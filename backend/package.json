@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
@@ -18,9 +19,11 @@
     "kafkajs": "^2.2.4",
     "redis": "^6.0.0",
     "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "uuid": "^14.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
-  }
+  },
+  "type": "commonjs"
 }
