@@ -1,23 +1,59 @@
-version: '3.9'
+version: '3.8'
 
 services:
-
   redis:
-    image: redis:7
+    image: redis:7-alpine
+    container_name: realtime_redis
     ports:
       - "6379:6379"
+    restart: unless-stopped
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:latest
+    image: zookeeper:latest
+    container_name: realtime_zookeeper
+    ports:
+      - "2181:2181"
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOO_CFG_SERVER_1: zookeeper:2888:3888
+    restart: unless-stopped
 
   kafka:
-    image: confluentinc/cp-kafka:latest
+    image: confluentinc/cp-kafka:5.5.12
+    container_name: realtime_kafka
     ports:
       - "9092:9092"
+    depends_on:
+      - zookeeper
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: realtime_backend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+      - kafka
+    environment:
+      - PORT=3000
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=kafka:29092
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: realtime_frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://localhost:3000
+    restart: unless-stopped

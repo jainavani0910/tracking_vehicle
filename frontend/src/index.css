@@ -9,4 +9,25 @@ body,
   height: 100%;
   margin: 0;
   padding: 0;
+  background-color: #ffffff;
+  overflow: hidden;
+}
+
+/* Custom Sleek Scrollbar styling for clean light-mode theme */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
