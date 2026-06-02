@@ -41,20 +41,8 @@ const initializeSocketServer = (server) => {
     });
   });
 
-  startDeltaLoop();
-  return io;
-};
-
-// ─── Delta broadcast loop ──────────────────────────────────────────────────────
-// Every second, broadcast ALL vehicle positions as delta updates.
-// The frontend merges these into its existing snapshot — it never replaces the
-// whole list, so the total count stays at 10,000 regardless of zoom level.
-
-const startDeltaLoop = () => {
-  setInterval(() => {
-    if (subscribedSockets.size === 0) return;
-
-    const allVehicles = vehicleStore.getAllVehicles();
+  vehicleStore.vehicleEvents.on('batch_updated', (delta) => {
+    if (subscribedSockets.size === 0 || delta.length === 0) return;
 
     for (const [socketId, { socket }] of subscribedSockets.entries()) {
       if (!socket || socket.disconnected) {
@@ -62,13 +50,14 @@ const startDeltaLoop = () => {
         continue;
       }
       try {
-        // Emit as 'vehicleUpdates' — frontend merges by id, keeping total at 10k
-        socket.emit('vehicleUpdates', allVehicles);
+        socket.emit('vehicleUpdates', delta);
       } catch (err) {
         console.error(`[WebSocket] Delta dispatch failed for ${socketId}:`, err.message);
       }
     }
-  }, DELTA_INTERVAL);
+  });
+
+  return io;
 };
 
 module.exports = { initializeSocketServer };

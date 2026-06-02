@@ -73,9 +73,12 @@ const initializeVehicles = () => {
 // ─── Per-tick Update ──────────────────────────────────────────────────────────
 
 const updateVehiclePosition = (vehicle) => {
+  let changed = false;
+
   // Occasional status change (2% chance per tick)
   if (Math.random() > 0.98) {
     const r = Math.random();
+    const oldStatus = vehicle.status;
     if (r > 0.6) {
       vehicle.status = 'active';
       vehicle.speed = rnd(15, 80);
@@ -86,9 +89,11 @@ const updateVehiclePosition = (vehicle) => {
       vehicle.status = 'stopped';
       vehicle.speed = 0;
     }
+    if (oldStatus !== vehicle.status) changed = true;
   }
 
   if (vehicle.status === 'active') {
+    changed = true;
     // Speed fluctuation
     vehicle.speed += rnd(-5, 5);
     vehicle.speed = Math.max(10, Math.min(110, vehicle.speed));
@@ -128,9 +133,14 @@ const updateVehiclePosition = (vehicle) => {
     // Auto-refuel mock
     if (vehicle.fuel <= 5) vehicle.fuel = 100;
     if (vehicle.battery <= 5) vehicle.battery = 100;
+    changed = true;
   }
 
-  vehicle.timestamp = new Date().toISOString();
+  if (changed) {
+    vehicle.timestamp = new Date().toISOString();
+  }
+
+  return changed;
 };
 
 // ─── Main Loop ────────────────────────────────────────────────────────────────
@@ -142,8 +152,9 @@ const startSimulation = () => {
     const batch = [];
 
     vehicles.forEach((vehicle) => {
-      updateVehiclePosition(vehicle);
-      batch.push({ ...vehicle });
+      if (updateVehiclePosition(vehicle)) {
+        batch.push({ ...vehicle });
+      }
     });
 
     // ① Always update in-memory store — works with or without Kafka/Redis

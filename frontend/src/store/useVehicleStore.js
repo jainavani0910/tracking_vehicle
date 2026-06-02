@@ -7,8 +7,10 @@ export const useVehicleStore = create((set) => ({
   latency: 0,
   isConnected: false,
   updatesCount: 0, // Updates per second metric
+  visibleVehicles: [],
   visibleVehiclesCount: 0,
   
+  setVisibleVehicles: (visibleVehicles) => set({ visibleVehicles, visibleVehiclesCount: visibleVehicles.length }),
   setVisibleVehiclesCount: (count) => set({ visibleVehiclesCount: count }),
 
   // Full replacement — used when the server sends an initial snapshot

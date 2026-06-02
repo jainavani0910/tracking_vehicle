@@ -5,6 +5,9 @@
  * when Kafka/Redis infrastructure is not running.
  */
 
+const EventEmitter = require('events');
+const vehicleEvents = new EventEmitter();
+
 const vehicleMap = new Map();
 const historyMap = new Map();
 const MAX_HISTORY = 20;
@@ -14,6 +17,7 @@ const MAX_HISTORY = 20;
 const updateVehicle = (vehicle) => {
   vehicleMap.set(vehicle.id, vehicle);
   _appendHistory(vehicle);
+  vehicleEvents.emit('batch_updated', [vehicle]);
 };
 
 const updateBatch = (vehicles) => {
@@ -21,6 +25,9 @@ const updateBatch = (vehicles) => {
     vehicleMap.set(v.id, v);
     _appendHistory(v);
   });
+  if (vehicles.length > 0) {
+    vehicleEvents.emit('batch_updated', vehicles);
+  }
 };
 
 const _appendHistory = (vehicle) => {
@@ -78,4 +85,5 @@ module.exports = {
   getVehicle,
   getVehicleHistory,
   getStats,
+  vehicleEvents,
 };

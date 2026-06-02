@@ -79,7 +79,8 @@ const MapView = () => {
         .then((res) => {
           setSelectedVehicleHistory(res.data);
 
-          const vObj = vehicles.find(v => v.id === selectedVehicleId);
+          const currentVehicles = useVehicleStore.getState().vehicles;
+          const vObj = currentVehicles.find(v => v.id === selectedVehicleId);
           if (vObj && mapRef.current) {
             mapRef.current.getMap().easeTo({
               center: [vObj.longitude, vObj.latitude],
@@ -94,19 +95,9 @@ const MapView = () => {
     } else {
       setSelectedVehicleHistory([]);
     }
-  }, [selectedVehicleId, setSelectedVehicleHistory, vehicles]);
+  }, [selectedVehicleId, setSelectedVehicleHistory]);
 
-  const onLoad = useCallback(() => {
-    logger.info('Map loaded, fetching initial vehicles...');
-    apiClient.get('/api/vehicles').then((res) => {
-      const vehiclesData = res.data || [];
-      if (vehiclesData.length > 0) {
-        useVehicleStore.getState().setVehicles(vehiclesData);
-      }
-    }).catch(err => {
-      logger.error(`Failed to fetch initial vehicles: ${err.message}`);
-    });
-  }, []);
+
 
   const geojsonVehicles = useMemo(() => {
     const features = vehicles.map(vehicle => ({
@@ -152,26 +143,34 @@ const MapView = () => {
       if (!map) return;
       const bounds = map.getBounds();
       if (bounds) {
-        let count = 0;
+        const visible = [];
         const west = bounds.getWest();
         const east = bounds.getEast();
         const south = bounds.getSouth();
         const north = bounds.getNorth();
         for (let i = 0; i < vehicles.length; i++) {
           const v = vehicles[i];
+          let inLng = false;
+          if (east - west >= 360) {
+            inLng = true;
+          } else {
+            let lng = v.longitude;
+            while (lng < west) lng += 360;
+            while (lng >= west + 360) lng -= 360;
+            if (lng <= east) inLng = true;
+          }
           if (
-            v.longitude >= west &&
-            v.longitude <= east &&
+            inLng &&
             v.latitude >= south &&
             v.latitude <= north
           ) {
-            count++;
+            visible.push(v);
           }
         }
-        setVisibleVehiclesCount(count);
+        useVehicleStore.getState().setVisibleVehicles(visible);
       }
     }
-  }, [vehicles, setVisibleVehiclesCount]);
+  }, [vehicles]);
 
   useEffect(() => {
     updateVisibleVehicles();
@@ -204,7 +203,6 @@ const MapView = () => {
         mapStyle={mapStyleObj}
         minZoom={1}
         maxZoom={18}
-        onLoad={onLoad}
         onClick={onMapClick}
         onMoveEnd={onMoveEnd}
         onMouseEnter={onMouseEnter}
