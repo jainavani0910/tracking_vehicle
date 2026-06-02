@@ -7,13 +7,28 @@ export const useVehicleStore = create((set) => ({
   latency: 0,
   isConnected: false,
   updatesCount: 0, // Updates per second metric
+  visibleVehiclesCount: 0,
   
-  setVehicles: (vehicles) => 
-    set((state) => ({ 
-      vehicles,
-      updatesCount: state.updatesCount + vehicles.length
-    })),
-  
+  setVisibleVehiclesCount: (count) => set({ visibleVehiclesCount: count }),
+
+  // Full replacement — used when the server sends an initial snapshot
+  replaceVehicles: (incomingVehicles) =>
+    set({
+      vehicles: incomingVehicles,
+      updatesCount: incomingVehicles.length,
+    }),
+
+  // Merge update — used for delta ticks, preserves vehicles not in the delta
+  setVehicles: (incomingVehicles) =>
+    set((state) => {
+      const map = new Map(state.vehicles.map(v => [v.id, v]));
+      incomingVehicles.forEach(v => map.set(v.id, v));
+      return {
+        vehicles: Array.from(map.values()),
+        updatesCount: state.updatesCount + incomingVehicles.length,
+      };
+    }),
+
   setSelectedVehicleHistory: (history) => set({ selectedVehicleHistory: history }),
   
   setSelectedVehicleId: (id) => set({ selectedVehicleId: id, selectedVehicleHistory: [] }), // Reset history on click

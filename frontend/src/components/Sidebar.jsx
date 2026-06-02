@@ -21,7 +21,8 @@ const Sidebar = () => {
     isConnected, 
     latency, 
     selectedVehicleId, 
-    setSelectedVehicleId 
+    setSelectedVehicleId,
+    visibleVehiclesCount
   } = useVehicleStore();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -38,7 +39,7 @@ const Sidebar = () => {
   }, []);
 
   // Compute counts
-  const totalCount = vehicles.length;
+  const totalCount = visibleVehiclesCount;
   const activeCount = vehicles.filter(v => v.status === 'active').length;
   const idleCount = vehicles.filter(v => v.status === 'idle').length;
   const stoppedCount = vehicles.filter(v => v.status === 'stopped').length;

@@ -1,6 +1,7 @@
 const express = require('express');
 const redisClient = require('../redis/redisClient.js');
 const { isRedisAvailable } = require('../redis/redisClient.js');
+const { isProducerConnected } = require('../kafka/producer');
 const vehicleStore = require('../services/vehicleStore');
 
 const router = express.Router();
@@ -76,7 +77,7 @@ router.get('/stats', (req, res) => {
 // ─── GET /api/vehicles/:id/history ────────────────────────────────────────────
 router.get('/:id/history', async (req, res) => {
   try {
-    if (isRedisAvailable()) {
+    if (isRedisAvailable() && isProducerConnected()) {
       const history = await redisClient.lRange(`vehicle_history:${req.params.id}`, 0, -1);
       return res.json(history.map((item) => JSON.parse(item)));
     }
@@ -105,7 +106,7 @@ router.get("/redis-test", async (req, res) => {
 // ─── GET /api/vehicles/:id ────────────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
-    if (isRedisAvailable()) {
+    if (isRedisAvailable() && isProducerConnected()) {
       const vehicle = await redisClient.hGet('vehicle_details', req.params.id);
       if (vehicle) return res.json(JSON.parse(vehicle));
     }

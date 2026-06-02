@@ -5,12 +5,23 @@ const vehicles = new Map();
 const NUM_VEHICLES = 10000;
 const UPDATE_INTERVAL = 1000; // ms
 
+// World bounds — Redis GEOADD requires lat in [-85.05, 85.05]
+const WORLD = {
+  latMin: -85.0,
+  latMax: 85.0,
+  lonMin: -180.0,
+  lonMax: 180.0,
+};
+
 const DRIVERS = [
-  'Rajesh Kumar', 'Amit Sharma', 'Priya Singh', 'Sanjay Gupta', 'Vikram Rathore',
-  'Ananya Iyer', 'Rahul Patel', 'Sneha Reddy', 'Manish Verma', 'Karan Johar',
-  'Sunita Rao', 'Arjun Kapoor', 'Pooja Hegde', 'Rohan Mehta', 'Deepa Nair',
-  'Suresh Nair', 'Kavita Sharma', 'Arun Mishra', 'Nisha Patel', 'Dinesh Verma',
-  'Pradeep Singh', 'Rekha Gupta', 'Manoj Tiwari', 'Geeta Pandey', 'Ravi Shankar',
+  'James Carter', 'Maria Gonzalez', 'Michael Johnson', 'Emily Davis', 'Robert Wilson',
+  'Lucas Müller', 'Sophie Dubois', 'Marco Rossi', 'Anna Kowalski', 'Carlos García',
+  'Rajesh Kumar', 'Yuki Tanaka', 'Wei Zhang', 'Priya Singh', 'Ji-ho Kim',
+  'João Silva', 'Isabella Fernández', 'Mateus Oliveira', 'Valentina López', 'Diego Ramírez',
+  'Amara Diallo', 'Chidi Okonkwo', 'Fatima Benali', 'Kwame Asante', 'Zanele Dlamini',
+  'Omar Al-Rashid', 'Layla Hassan', 'Khalid Al-Farsi', 'Nour Ibrahim', 'Tariq Mansoor',
+  'Liam Murphy', 'Olivia Thompson', 'Noah Williams', 'Ava Robinson', 'Ethan Clarke',
+  'Siti Rahayu', 'Arjun Mehta', 'Thuy Nguyen', 'Budi Santoso', 'Aiko Yamamoto',
 ];
 
 const VEHICLE_TYPES = [
@@ -18,55 +29,24 @@ const VEHICLE_TYPES = [
   'Refrigerated Truck', 'Tanker', 'Flatbed', 'Mini Van', 'Bike Courier',
 ];
 
-/**
- * 10 major Indian cities with vehicle counts totalling 10,000.
- * Bounds are realistic lat/lon ranges for each metro area.
- */
-const INDIA_CITIES = [
-  { name: 'Delhi NCR', latMin: 28.40, latMax: 28.90, lonMin: 76.80, lonMax: 77.50, count: 2000 },
-  { name: 'Mumbai', latMin: 18.85, latMax: 19.30, lonMin: 72.75, lonMax: 73.10, count: 2000 },
-  { name: 'Bangalore', latMin: 12.83, latMax: 13.20, lonMin: 77.45, lonMax: 77.80, count: 1500 },
-  { name: 'Hyderabad', latMin: 17.25, latMax: 17.60, lonMin: 78.35, lonMax: 78.70, count: 1000 },
-  { name: 'Chennai', latMin: 12.92, latMax: 13.22, lonMin: 80.12, lonMax: 80.42, count: 1000 },
-  { name: 'Kolkata', latMin: 22.42, latMax: 22.72, lonMin: 88.25, lonMax: 88.55, count: 1000 },
-  { name: 'Pune', latMin: 18.42, latMax: 18.70, lonMin: 73.75, lonMax: 74.05, count: 500 },
-  { name: 'Ahmedabad', latMin: 22.95, latMax: 23.20, lonMin: 72.52, lonMax: 72.80, count: 500 },
-  { name: 'Jaipur', latMin: 26.82, latMax: 27.10, lonMin: 75.65, lonMax: 75.92, count: 250 },
-  { name: 'Lucknow', latMin: 26.73, latMax: 27.00, lonMin: 80.85, lonMax: 81.12, count: 250 },
-];
-// Sum: 2000+2000+1500+1000+1000+1000+500+500+250+250 = 10,000
-
 const rnd = (min, max) => Math.random() * (max - min) + min;
+
+// Clamp a value between min and max
+const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
+
+// Wrap longitude to stay within [-180, 180]
+const wrapLon = (lon) => {
+  while (lon > 180) lon -= 360;
+  while (lon < -180) lon += 360;
+  return lon;
+};
 
 // ─── Initialization ───────────────────────────────────────────────────────────
 
-// Helper function to shuffle array (Fisher-Yates)
-const shuffleArray = (arr) => {
-  const shuffled = [...arr];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-};
-
 const initializeVehicles = () => {
-  // Create a pool of cities with proper distribution
-  const cityPool = [];
-  for (const city of INDIA_CITIES) {
-    for (let i = 0; i < city.count; i++) {
-      cityPool.push(city);
-    }
-  }
-
-  // Shuffle the city pool to randomize city assignments
-  const shuffledCities = shuffleArray(cityPool);
-
-  // Create vehicles with randomized city assignments
   for (let idx = 0; idx < NUM_VEHICLES; idx++) {
     const vehicleId = `vehicle-${String(idx).padStart(5, '0')}`;
     const type = VEHICLE_TYPES[idx % VEHICLE_TYPES.length];
-    const city = shuffledCities[idx];
 
     const statusRoll = Math.random();
     const initialStatus = statusRoll > 0.85 ? (Math.random() > 0.5 ? 'idle' : 'stopped') : 'active';
@@ -75,11 +55,8 @@ const initializeVehicles = () => {
     vehicles.set(vehicleId, {
       id: vehicleId,
       name: `${type} #${String(idx + 1).padStart(5, '0')}`,
-      city: city.name,
-      latitude: rnd(city.latMin, city.latMax),
-      longitude: rnd(city.lonMin, city.lonMax),
-      // Internal bounds for boundary bouncing — stripped before emitting
-      _bounds: city,
+      latitude: rnd(WORLD.latMin, WORLD.latMax),
+      longitude: rnd(WORLD.lonMin, WORLD.lonMax),
       speed: initialSpeed,
       heading: rnd(0, 360),
       status: initialStatus,
@@ -90,14 +67,7 @@ const initializeVehicles = () => {
     });
   }
 
-  console.log(`[Simulator] ✅ Initialized ${vehicles.size} vehicles randomly distributed across ${INDIA_CITIES.length} Indian cities.`);
-  const cityStats = {};
-  vehicles.forEach((v) => {
-    cityStats[v.city] = (cityStats[v.city] || 0) + 1;
-  });
-  Object.entries(cityStats).forEach(([city, count]) => {
-    console.log(`  › ${city}: ${count} vehicles`);
-  });
+  console.log(`[Simulator] ✅ Initialized ${vehicles.size} vehicles randomly distributed across the world.`);
 };
 
 // ─── Per-tick Update ──────────────────────────────────────────────────────────
@@ -135,16 +105,14 @@ const updateVehiclePosition = (vehicle) => {
     vehicle.latitude += deltaLat;
     vehicle.longitude += deltaLon;
 
-    // Bounce within city bounds
-    const b = vehicle._bounds;
-    if (vehicle.latitude > b.latMax || vehicle.latitude < b.latMin) {
+    // Clamp latitude to Redis-safe bounds (bounce off poles)
+    if (vehicle.latitude > WORLD.latMax || vehicle.latitude < WORLD.latMin) {
       vehicle.heading = 180 - vehicle.heading;
-      vehicle.latitude = Math.max(b.latMin + 0.001, Math.min(b.latMax - 0.001, vehicle.latitude));
+      vehicle.latitude = clamp(vehicle.latitude, WORLD.latMin + 0.01, WORLD.latMax - 0.01);
     }
-    if (vehicle.longitude > b.lonMax || vehicle.longitude < b.lonMin) {
-      vehicle.heading = 360 - vehicle.heading;
-      vehicle.longitude = Math.max(b.lonMin + 0.001, Math.min(b.lonMax - 0.001, vehicle.longitude));
-    }
+
+    // Wrap longitude around the date-line instead of bouncing
+    vehicle.longitude = wrapLon(vehicle.longitude);
 
     // Minor heading drift
     if (Math.random() > 0.9) {
@@ -175,9 +143,7 @@ const startSimulation = () => {
 
     vehicles.forEach((vehicle) => {
       updateVehiclePosition(vehicle);
-      // Strip internal _bounds before publishing
-      const { _bounds, ...vehicleData } = vehicle;
-      batch.push(vehicleData);
+      batch.push({ ...vehicle });
     });
 
     // ① Always update in-memory store — works with or without Kafka/Redis
@@ -188,7 +154,7 @@ const startSimulation = () => {
 
   }, UPDATE_INTERVAL);
 
-  console.log(`[Simulator] 🚀 Simulation running — ${NUM_VEHICLES} vehicles across India updating every ${UPDATE_INTERVAL}ms`);
+  console.log(`[Simulator] 🚀 Simulation running — ${NUM_VEHICLES} vehicles across the world updating every ${UPDATE_INTERVAL}ms`);
 };
 
 module.exports = { startSimulation };

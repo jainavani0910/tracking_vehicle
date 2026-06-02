@@ -19,6 +19,8 @@ const kafka = new Kafka({
 const producer = kafka.producer();
 let _producerConnected = false;
 
+const isProducerConnected = () => _producerConnected;
+
 const connectProducer = async () => {
   try {
     console.log(`[Kafka Producer] Connecting to ${KAFKA_BROKER}...`);
@@ -86,4 +88,4 @@ const sendVehicleBatch = async (vehicles) => {
   }
 };
 
-module.exports = { connectProducer, disconnectProducer, sendVehicleUpdate, sendVehicleBatch };
+module.exports = { connectProducer, disconnectProducer, sendVehicleUpdate, sendVehicleBatch, isProducerConnected };

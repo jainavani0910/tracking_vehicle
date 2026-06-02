@@ -49,6 +49,13 @@ export const initializeSocket = () => {
     }, 1000);
   });
 
+  // Full snapshot on connect — replace entire vehicle list with all 10k vehicles
+  socket.on('vehicleSnapshot', (vehicles) => {
+    logger.info(`Received full snapshot: ${vehicles.length} vehicles`);
+    store.replaceVehicles(vehicles);
+  });
+
+  // Delta updates every second — merge updated positions into existing list
   socket.on('vehicleUpdates', (vehicles) => {
     store.setVehicles(vehicles);
   });
