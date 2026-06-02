@@ -14,7 +14,7 @@ export const initializeSocket = () => {
   logger.info(`Initializing Socket.IO connection to ${SOCKET_URL}...`);
 
   socket = io(SOCKET_URL, {
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
@@ -25,6 +25,7 @@ export const initializeSocket = () => {
   const store = useVehicleStore.getState();
 
   socket.on('connect', () => {
+    console.log('CONNECTED TO SOCKET SERVER');
     logger.info(`Socket connected successfully (ID: ${socket.id})`);
     store.setIsConnected(true);
 

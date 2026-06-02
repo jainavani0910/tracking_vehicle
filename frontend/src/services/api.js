@@ -27,7 +27,7 @@ apiClient.interceptors.response.use(
 
 export const vehicleAPI = {
   getVehiclesInBounds: (bounds) => {
-    return apiClient.get('/vehicles/within', {
+    return apiClient.get('/api/vehicles/within', {
       params: {
         sw_lng: bounds.getSouthWest().lng,
         sw_lat: bounds.getSouthWest().lat,
@@ -36,8 +36,8 @@ export const vehicleAPI = {
       },
     });
   },
-  getVehicle: (id) => apiClient.get(`/vehicles/${id}`),
-  getVehicleHistory: (id) => apiClient.get(`/vehicles/${id}/history`),
+  getVehicle: (id) => apiClient.get(`/api/vehicles/${id}`),
+  getVehicleHistory: (id) => apiClient.get(`/api/vehicles/${id}/history`),
 };
 
 export const healthCheck = () => apiClient.get('/health');

@@ -142,16 +142,7 @@ const dispatchFromRedis = async (socket, tiles) => {
     }
   }
 
-  console.log("dispatchFromRedis called");
-
-  const all = await redisClient.hGetAll("vehicle_details");
-
-  console.log("Redis vehicles count:", Object.keys(all).length);
-  const vehicles = Object.values(all)
-    .slice(0, 20)
-    .map((v) => JSON.parse(v));
-
-  socket.emit("vehicleUpdates", vehicles);
+  socket.emit("vehicleUpdates", Array.from(allVehicles.values()));
 };
 
 // ─── In-memory dispatch (no Redis) ────────────────────────────────────────────
