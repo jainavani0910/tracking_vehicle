@@ -7,12 +7,6 @@ const TOPIC_NAME = 'vehicle-updates';
 const kafka = new Kafka({
   clientId: 'vehicle-tracking-producer',
   brokers: KAFKA_BROKER.split(','),
-  connectionTimeout: 1500,  // Fail within 1.5s if broker unreachable
-  requestTimeout: 3000,
-  retry: {
-    initialRetryTime: 100,
-    retries: 0,             // No retries — fail fast, in-memory handles it
-  },
   logLevel: 1, // ERROR only
 });
 
