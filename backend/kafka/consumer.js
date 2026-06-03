@@ -41,53 +41,49 @@ const connectConsumer = async () => {
     console.log(`[Kafka Consumer] Subscribed to "${TOPIC_NAME}"`);
 
     await consumer.run({
-      eachMessage: async ({ message }) => {
+      eachBatchAutoResolve: true,
+      eachBatch: async ({ batch }) => {
+        if (!isRedisAvailable()) return;
+        
         try {
-          if (!message.value) return;
-          const vehicle = JSON.parse(message.value.toString());
+          const pipeline = redisClient.multi();
+          
+          for (const message of batch.messages) {
+            if (!message.value) continue;
+            
+            const vehicle = JSON.parse(message.value.toString());
+            
+            pipeline.geoAdd("vehicles", {
+              longitude: Number(vehicle.longitude),
+              latitude: Number(vehicle.latitude),
+              member: vehicle.id,
+            });
 
-          // Always update in-memory
-          vehicleStore.updateVehicle(vehicle);
+            pipeline.hSet(
+              "vehicle_details",
+              vehicle.id,
+              JSON.stringify(vehicle),
+            );
 
-          // Update Redis if available
-          // Update Redis if available
-          if (isRedisAvailable()) {
-            try {
-              await redisClient.geoAdd("vehicles", {
-                longitude: Number(vehicle.longitude),
-                latitude: Number(vehicle.latitude),
-                member: vehicle.id,
-              });
+            const histKey = `vehicle_history:${vehicle.id}`;
 
-              await redisClient.hSet(
-                "vehicle_details",
-                vehicle.id,
-                JSON.stringify(vehicle),
-              );
+            pipeline.lPush(
+              histKey,
+              JSON.stringify({
+                latitude: vehicle.latitude,
+                longitude: vehicle.longitude,
+                speed: vehicle.speed,
+                heading: vehicle.heading,
+                timestamp: vehicle.timestamp || new Date().toISOString(),
+              }),
+            );
 
-
-              const histKey = `vehicle_history:${vehicle.id}`;
-
-              await redisClient.lPush(
-                histKey,
-                JSON.stringify({
-                  latitude: vehicle.latitude,
-                  longitude: vehicle.longitude,
-                  speed: vehicle.speed,
-                  heading: vehicle.heading,
-                  timestamp: vehicle.timestamp || new Date().toISOString(),
-                }),
-              );
-
-              await redisClient.lTrim(histKey, 0, 19);
-            } catch (err) {
-              console.error("[Consumer Redis Error]", err.message);
-            }
-          } else {
-            console.warn("[Consumer] Redis not available");
+            pipeline.lTrim(histKey, 0, 19);
           }
+          
+          await pipeline.exec();
         } catch (err) {
-          console.error("[Kafka Consumer] Message error:", err.message);
+          console.error("[Consumer Batch Error]", err.message);
         }
       },
     });

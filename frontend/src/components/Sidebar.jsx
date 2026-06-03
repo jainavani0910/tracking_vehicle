@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useVehicleStore } from '../store/useVehicleStore';
 import { logger } from '../utils/logger';
 import { 
@@ -17,11 +17,12 @@ import {
 
 const Sidebar = () => {
   const { 
-    vehicles, 
     isConnected, 
     latency, 
     selectedVehicleId, 
-    setSelectedVehicleId 
+    setSelectedVehicleId,
+    visibleVehiclesCount,
+    visibleVehicles
   } = useVehicleStore();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -37,15 +38,28 @@ const Sidebar = () => {
     return unsubscribe;
   }, []);
 
-  // Compute counts
-  const totalCount = vehicles.length;
-  const activeCount = vehicles.filter(v => v.status === 'active').length;
-  const idleCount = vehicles.filter(v => v.status === 'idle').length;
-  const stoppedCount = vehicles.filter(v => v.status === 'stopped').length;
-  const overspeedCount = vehicles.filter(v => v.speed > 80).length;
+  // Compute counts efficiently
+  const { totalCount, activeCount, idleCount, stoppedCount, overspeedCount } = useMemo(() => {
+    let active = 0, idle = 0, stopped = 0, overspeed = 0;
+    const vils = visibleVehicles || [];
+    for (let i = 0; i < vils.length; i++) {
+      const v = vils[i];
+      if (v.status === 'active') active++;
+      else if (v.status === 'idle') idle++;
+      else if (v.status === 'stopped') stopped++;
+      if (v.speed > 80) overspeed++;
+    }
+    return {
+      totalCount: visibleVehiclesCount,
+      activeCount: active,
+      idleCount: idle,
+      stoppedCount: stopped,
+      overspeedCount: overspeed
+    };
+  }, [visibleVehicles, visibleVehiclesCount]);
 
   // Filter vehicles
-  const filteredVehicles = vehicles.filter(v => {
+  const filteredVehicles = (visibleVehicles || []).filter(v => {
     const matchesSearch = v.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           v.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           v.driver?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -118,7 +132,7 @@ const Sidebar = () => {
               : 'bg-slate-50/60 border-slate-200 hover:bg-slate-100/50 hover:border-slate-300 text-slate-700'
           }`}
         >
-          <div className={`text-[10px] uppercase font-bold tracking-wider ${activeFilter === 'all' ? 'text-slate-300' : 'text-slate-500'}`}>Total System</div>
+          <div className={`text-[10px] uppercase font-bold tracking-wider ${activeFilter === 'all' ? 'text-slate-300' : 'text-slate-500'}`}>Visible Vehicles</div>
           <div className="text-xl font-extrabold mt-0.5">{totalCount}</div>
         </div>
 

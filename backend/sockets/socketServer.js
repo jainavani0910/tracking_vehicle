@@ -1,92 +1,63 @@
-const { Server } = require("socket.io");
-const redisClient = require("../redis/redisClient");
-const { isRedisAvailable } = require("../redis/redisClient");
-const vehicleStore = require("../services/vehicleStore");
+const { Server } = require('socket.io');
+const vehicleStore = require('../services/vehicleStore');
 
 let io;
 const subscribedSockets = new Map();
-const BATCH_INTERVAL = 1000; // ms
+
+// How often to push delta updates (ms)
+const DELTA_INTERVAL = 1000;
 
 const initializeSocketServer = (server) => {
   io = new Server(server, {
-    cors: {
-      origin: "*",
-      methods: ["GET", "POST"],
-    },
+    cors: { origin: '*', methods: ['GET', 'POST'] },
     pingInterval: 10000,
     pingTimeout: 5000,
+    // Raise the per-message limit so the initial snapshot of 10k vehicles fits
+    maxHttpBufferSize: 50 * 1024 * 1024, // 50 MB
   });
 
-  io.on("connection", (socket) => {
+  io.on('connection', (socket) => {
     console.log(`[WebSocket] Client connected: ${socket.id}`);
 
-    socket.on("subscribeToViewport", (data) => {
-      try {
-        if (!data) return;
-        subscribedSockets.set(socket.id, {
-          socket,
-          ...data,
-          lastPing: Date.now(),
-        });
-      } catch (err) {
-        console.error(
-          `[WebSocket] subscribeToViewport error from ${socket.id}:`,
-          err.message,
-        );
-      }
+    // ── Send full snapshot immediately so the map loads all vehicles at once ──
+    const snapshot = vehicleStore.getAllVehicles();
+    socket.emit('vehicleSnapshot', snapshot);
+    console.log(`[WebSocket] Sent snapshot of ${snapshot.length} vehicles to ${socket.id}`);
+
+    // Register for recurring delta updates
+    subscribedSockets.set(socket.id, { socket });
+
+    socket.on('ping', (cb) => {
+      if (typeof cb === 'function') cb({ timestamp: Date.now() });
     });
 
-    socket.on("ping", (cb) => {
-      if (typeof cb === "function") cb({ timestamp: Date.now() });
-    });
-
-    socket.on("disconnect", (reason) => {
+    socket.on('disconnect', (reason) => {
       console.log(`[WebSocket] Client disconnected: ${socket.id} (${reason})`);
       subscribedSockets.delete(socket.id);
     });
 
-    socket.on("error", (err) => {
+    socket.on('error', (err) => {
       console.error(`[WebSocket] Socket ${socket.id} error:`, err.message);
     });
   });
 
-  startBatching();
-  return io;
-};
+  vehicleStore.vehicleEvents.on('batch_updated', (delta) => {
+    if (subscribedSockets.size === 0 || delta.length === 0) return;
 
-// ─── Main dispatch loop ────────────────────────────────────────────────────────
-
-const startBatching = () => {
-  setInterval(async () => {
-    for (const [socketId, subscription] of subscribedSockets.entries()) {
-      const { socket, tiles } = subscription;
-
+    for (const [socketId, { socket }] of subscribedSockets.entries()) {
       if (!socket || socket.disconnected) {
         subscribedSockets.delete(socketId);
         continue;
       }
-
-      if (!tiles || !Array.isArray(tiles) || tiles.length === 0) continue;
-
       try {
-        if (isRedisAvailable()) {
-          await dispatchFromRedis(socket, tiles);
-        } else {
-          dispatchFromMemory(socket, tiles);
-        }
+        socket.emit('vehicleUpdates', delta);
       } catch (err) {
-        // If Redis throws mid-flight, fall back to memory for this tick
-        try {
-          dispatchFromMemory(socket, tiles);
-        } catch (memErr) {
-          console.error(
-            `[WebSocket] Dispatch failed for ${socketId}:`,
-            memErr.message,
-          );
-        }
+        console.error(`[WebSocket] Delta dispatch failed for ${socketId}:`, err.message);
       }
     }
-  }, BATCH_INTERVAL);
+  });
+
+  return io;
 };
 
 // ─── Redis-backed dispatch ─────────────────────────────────────────────────────
