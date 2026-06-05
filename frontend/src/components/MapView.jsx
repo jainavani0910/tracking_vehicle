@@ -7,8 +7,26 @@ import apiClient, { vehicleAPI } from '../services/api';
 import { logger } from '../utils/logger';
 
 const MapView = () => {
-  const [isDarkMode, setIsDarkMode] = useState(false);
-  const [isSatellite, setIsSatellite] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('mapThemeIsDarkMode');
+      return saved !== null ? JSON.parse(saved) : false;
+    } catch { return false; }
+  });
+  const [isSatellite, setIsSatellite] = useState(() => {
+    try {
+      const saved = localStorage.getItem('mapThemeIsSatellite');
+      return saved !== null ? JSON.parse(saved) : false;
+    } catch { return false; }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('mapThemeIsDarkMode', JSON.stringify(isDarkMode));
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    localStorage.setItem('mapThemeIsSatellite', JSON.stringify(isSatellite));
+  }, [isSatellite]);
   const mapRef = useRef(null);
   
   const isDarkTheme = isDarkMode || isSatellite;

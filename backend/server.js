@@ -9,6 +9,7 @@ const { connectConsumer, disconnectConsumer } = require('./kafka/consumer');
 const { startSimulation } = require('./simulator/vehicleSimulator');
 const redisClient = require('./redis/redisClient');
 const { isRedisAvailable } = require('./redis/redisClient');
+const { connectTimescale, getPool } = require('./db/timescaleClient');
 
 const app = express();
 app.use(cors());
@@ -63,6 +64,11 @@ const startServer = () => {
   connectConsumer().catch(() => {
     console.warn('[Server] ⚠️  Kafka consumer unavailable — Redis will not be populated.');
   });
+  
+  // ④ Connect to TimescaleDB
+  connectTimescale().catch(() => {
+    console.warn('[Server] ⚠️  TimescaleDB unavailable - history will not be saved.');
+  });
 };
 
 startServer();
@@ -78,6 +84,8 @@ const gracefulShutdown = async () => {
     if (isRedisAvailable()) {
       try { await redisClient.quit(); } catch (_) {}
     }
+    
+    try { await getPool().end(); } catch (_) {}
 
     console.log('[Server] Shutdown complete.');
     process.exit(0);

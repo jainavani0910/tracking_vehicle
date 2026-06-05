@@ -8,6 +8,20 @@ services:
       - "6379:6379"
     restart: unless-stopped
 
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: realtime_timescaledb
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: avani_0909
+      POSTGRES_DB: vehicle_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./backend/db_init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
   zookeeper:
     image: zookeeper:latest
     container_name: realtime_zookeeper
@@ -42,10 +56,12 @@ services:
     depends_on:
       - redis
       - kafka
+      - timescaledb
     environment:
       - PORT=3000
       - REDIS_URL=redis://redis:6379
       - KAFKA_BROKERS=kafka:29092
+      - POSTGRES_URL=postgres://postgres:password@timescaledb:5432/vehicle_db
     restart: unless-stopped
 
   frontend:
@@ -58,3 +74,6 @@ services:
     environment:
       - VITE_API_URL=http://localhost:3000
     restart: unless-stopped
+
+volumes:
+  timescaledb_data:

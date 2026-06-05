@@ -17,6 +17,7 @@ This document explains the complete detailed workflow and implementation details
 - **Socket.IO Server**: Broadcasting vehicle delta updates to connected clients.
 - **Redis**: High-speed, in-memory cache for storing latest global vehicle positions.
 - **Kafka (AutoMQ)**: Scalable message broker buffering high-frequency vehicle telemetry between the simulator and the backend.
+- **TimescaleDB**: PostgreSQL-based time-series database for persisting historical vehicle telemetry and trajectory data.
 
 ---
 
@@ -39,6 +40,10 @@ This document explains the complete detailed workflow and implementation details
 ### D. Socket.IO & API Consolidation
 - **Delta Updates**: Replaced inefficient full-list broadcasts with true "delta" updates. Socket.IO now only pushes data for vehicles that have actively moved, drastically saving server bandwidth and browser memory.
 - **Initial Fetch Optimization**: Consolidated the initial API fetch and WebSocket subscription to avoid redundant data fetching (double work) on app load.
+
+### E. TimescaleDB Historical Storage
+- **Time-Series Ingestion**: Backend connection persists incoming vehicle points into a high-performance `vehicle_locations` hypertable.
+- **Rolling-Window Data Retention**: Enforces a 7-day automatic data pruning policy, ensuring that obsolete historical paths are cleared to optimize long-term storage and query performance.
 
 ---
 
@@ -66,11 +71,12 @@ This document explains the complete detailed workflow and implementation details
 1. **Vehicle Simulator** generates global GPS telemetry.
 2. **Kafka** buffers the massive influx of event streams.
 3. **Node.js Kafka Consumer** fetches batches, sends heartbeats, and processes chunks.
-4. **Redis** caches the latest geographical coordinates and vehicle statuses.
-5. **Node.js Socket.IO Server** detects delta changes and broadcasts updates to clients.
-6. **Frontend App** receives delta updates, merging them into the **Zustand Store**.
-7. **GeoJSON Parser** updates the MapLibre source in real-time.
-8. **MapLibre WebGL** re-renders the smooth, animated global fleet (with clustering and viewport filtering applied).
+4. **Redis** caches the latest geographical coordinates and vehicle statuses for immediate real-time retrieval.
+5. **TimescaleDB** concurrently ingests the processed telemetry into a time-partitioned hypertable for persistent historical storage.
+6. **Node.js Socket.IO Server** detects delta changes and broadcasts real-time updates to connected clients.
+7. **Frontend App** receives delta updates, merging them into the **Zustand Store**.
+8. **GeoJSON Parser** updates the MapLibre source in real-time.
+9. **MapLibre WebGL** re-renders the smooth, animated global fleet (with clustering and viewport filtering applied).
 
 ---
 

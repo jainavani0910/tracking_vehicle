@@ -41,6 +41,19 @@ const wrapLon = (lon) => {
   return lon;
 };
 
+const getDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3; // metres
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c; // in metres
+};
+
 // ─── Initialization ───────────────────────────────────────────────────────────
 
 const initializeVehicles = () => {
@@ -65,6 +78,15 @@ const initializeVehicles = () => {
       driver: DRIVERS[idx % DRIVERS.length],
       timestamp: new Date().toISOString(),
     });
+    
+    // Initialize lastSent state for Dead Reckoning
+    vehicles.get(vehicleId).lastSent = {
+      latitude: vehicles.get(vehicleId).latitude,
+      longitude: vehicles.get(vehicleId).longitude,
+      speed: vehicles.get(vehicleId).speed,
+      heading: vehicles.get(vehicleId).heading,
+      timeMs: Date.now()
+    };
   }
 
   console.log(`[Simulator] ✅ Initialized ${vehicles.size} vehicles randomly distributed across the world.`);
@@ -148,20 +170,56 @@ const updateVehiclePosition = (vehicle) => {
 const startSimulation = () => {
   initializeVehicles();
 
+  const DISTANCE_THRESHOLD = 50; // meters
+  const HEADING_THRESHOLD = 10; // degrees
+  const SPEED_THRESHOLD = 10; // km/h
+  const TIME_MAX_HEARTBEAT = 60000; // 60 seconds
+
   setInterval(() => {
     const batch = [];
+    const now = Date.now();
 
     vehicles.forEach((vehicle) => {
-      if (updateVehiclePosition(vehicle)) {
-        batch.push({ ...vehicle });
+      updateVehiclePosition(vehicle);
+      
+      const lastSent = vehicle.lastSent;
+      
+      const distance = getDistance(vehicle.latitude, vehicle.longitude, lastSent.latitude, lastSent.longitude);
+      let headingDiff = Math.abs(vehicle.heading - lastSent.heading);
+      if (headingDiff > 180) headingDiff = 360 - headingDiff; // Handle wrap around
+      const speedDiff = Math.abs(vehicle.speed - lastSent.speed);
+      const timeSinceLastUpdate = now - lastSent.timeMs;
+
+      // Dead Reckoning (Delta Filtering)
+      if (
+        distance > DISTANCE_THRESHOLD ||
+        headingDiff > HEADING_THRESHOLD ||
+        speedDiff > SPEED_THRESHOLD ||
+        timeSinceLastUpdate > TIME_MAX_HEARTBEAT
+      ) {
+        // Strip out lastSent when sending to prevent unnecessary payload bloat
+        const payload = { ...vehicle };
+        delete payload.lastSent;
+        batch.push(payload);
+        
+        // Update lastSent
+        vehicle.lastSent = {
+          latitude: vehicle.latitude,
+          longitude: vehicle.longitude,
+          speed: vehicle.speed,
+          heading: vehicle.heading,
+          timeMs: now
+        };
       }
     });
 
-    // ① Always update in-memory store — works with or without Kafka/Redis
-    vehicleStore.updateBatch(batch);
+    if (batch.length > 0) {
+      // ① Always update in-memory store — works with or without Kafka/Redis
+      vehicleStore.updateBatch(batch);
 
-    // ② Fire-and-forget to Kafka (silently ignored if broker unavailable)
-    sendVehicleBatch(batch);
+      // ② Fire-and-forget to Kafka (silently ignored if broker unavailable)
+      sendVehicleBatch(batch);
+    }
 
   }, UPDATE_INTERVAL);
 

@@ -17,7 +17,9 @@
     "faker": "^5.5.3",
     "ioredis": "^5.11.0",
     "kafkajs": "^2.2.4",
+    "pg": "^8.21.0",
     "redis": "^6.0.0",
+    "simplify-js": "^1.2.4",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "uuid": "^14.0.0"

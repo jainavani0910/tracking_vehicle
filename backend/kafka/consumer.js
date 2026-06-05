@@ -2,29 +2,65 @@ const { Kafka } = require("kafkajs");
 const redisClient = require("../redis/redisClient");
 const { isRedisAvailable } = require("../redis/redisClient");
 const vehicleStore = require("../services/vehicleStore");
+const { insertVehicleLocationsBatch } = require("../db/timescaleClient");
+const simplify = require("simplify-js");
 require("dotenv").config();
 
 const KAFKA_BROKER = process.env.KAFKA_BROKERS || "localhost:9092";
 const TOPIC_NAME = "vehicle-updates";
 
+// RDP Buffer
+let rdpBuffer = new Map();
+const RDP_FLUSH_INTERVAL = 60000; // 60 seconds
+const RDP_TOLERANCE = 0.0001; // Approx 11 meters at equator
+
+setInterval(() => {
+  if (rdpBuffer.size === 0) return;
+  const currentBuffer = rdpBuffer;
+  rdpBuffer = new Map();
+  
+  let allSimplifiedPoints = [];
+  
+  currentBuffer.forEach((points, vehicleId) => {
+    if (points.length === 0) return;
+    
+    // Map points for simplify-js {x, y}
+    const mappedPoints = points.map(p => ({ x: Number(p.longitude), y: Number(p.latitude), original: p }));
+    
+    // Run RDP
+    const simplified = simplify(mappedPoints, RDP_TOLERANCE, true);
+    
+    // Extract original payloads back
+    simplified.forEach(p => {
+      allSimplifiedPoints.push(p.original);
+    });
+  });
+  
+  if (allSimplifiedPoints.length > 0) {
+    insertVehicleLocationsBatch(allSimplifiedPoints).catch(err => {
+      console.error("[TimescaleDB] RDP Bulk Insert Error:", err.message);
+    });
+    // Optional debug log
+    // console.log(`[RDP] Simplified and inserted ${allSimplifiedPoints.length} points to TimescaleDB.`);
+  }
+}, RDP_FLUSH_INTERVAL);
+
 const kafka = new Kafka({
-  clientId: "vehicle-tracking-consumer",
+  clientId: 'vehicle-tracking-client',
   brokers: KAFKA_BROKER.split(","),
-  connectionTimeout: 15000,
-  requestTimeout: 60000,
+  connectionTimeout: 10000, // Give it 10s to connect
+  requestTimeout: 30000,    // Give it 30s for requests
   retry: {
     initialRetryTime: 1000,
-    retries: 5,
-    maxRetryTime: 30000,
-    factor: 2,
+    retries: 10
   },
   logLevel: 1, // ERROR only
 });
 
-const consumer = kafka.consumer({
-  groupId: "vehicle-tracking-group",
-  sessionTimeout: 60000,
-  heartbeatInterval: 5000,
+const consumer = kafka.consumer({ 
+  groupId: 'vehicle-tracking-group',
+  sessionTimeout: 30000, // Increase session timeout
+  heartbeatInterval: 3000,
   allowAutoTopicCreation: false,
   maxWaitTimeInMs: 500,
   minBytes: 1,
@@ -49,7 +85,7 @@ const _runConsumer = async () => {
       try {
         await redisClient.del("vehicles");
         await redisClient.del("vehicle_details");
-      } catch (_) {}
+      } catch (_) { }
     }
 
     await consumer.subscribe({ topic: TOPIC_NAME, fromBeginning: false });
@@ -74,9 +110,9 @@ const _runConsumer = async () => {
       _restartTimer = setTimeout(async () => {
         try {
           await consumer.disconnect();
-        } catch (_) {}
+        } catch (_) { }
         _consumerConnected = false;
-        _runConsumer().catch(() => {}); // restart silently
+        _runConsumer().catch(() => { }); // restart silently
       }, delay);
     });
 
@@ -128,6 +164,16 @@ const _runConsumer = async () => {
 
             await pipeline.exec();
 
+            // Add to RDP buffer instead of inserting directly
+            const vehiclesToInsert = chunk
+              .map(msg => msg.value ? JSON.parse(msg.value.toString()) : null)
+              .filter(v => v !== null);
+
+            vehiclesToInsert.forEach(v => {
+              if (!rdpBuffer.has(v.id)) rdpBuffer.set(v.id, []);
+              rdpBuffer.get(v.id).push(v);
+            });
+
             // Yield to the event loop so network I/O can happen
             await new Promise(resolve => setImmediate(resolve));
             await heartbeat();
@@ -158,7 +204,7 @@ const disconnectConsumer = async () => {
   try {
     await consumer.disconnect();
     _consumerConnected = false;
-  } catch (_) {}
+  } catch (_) { }
 };
 
 module.exports = { connectConsumer, disconnectConsumer };

@@ -1,5 +1,6 @@
 const express = require('express');
 const vehicleStore = require('../services/vehicleStore');
+const { getVehicleHistory: getTimescaleHistory } = require('../db/timescaleClient');
 
 const router = express.Router();
 
@@ -47,6 +48,18 @@ router.get('/:id/history', (req, res) => {
     return res.json(vehicleStore.getVehicleHistory(req.params.id));
   } catch (error) {
     console.error(`Failed to fetch history for ${req.params.id}:`, error);
+    return res.json([]);
+  }
+});
+
+// ─── GET /api/vehicles/:id/full_history ────────────────────────────────────────
+router.get('/:id/full_history', async (req, res) => {
+  try {
+    const hours = req.query.hours ? parseInt(req.query.hours, 10) : 24 * 7; // Default 7 days
+    const history = await getTimescaleHistory(req.params.id, hours);
+    return res.json(history);
+  } catch (error) {
+    console.error(`Failed to fetch full history for ${req.params.id}:`, error);
     return res.json([]);
   }
 });
