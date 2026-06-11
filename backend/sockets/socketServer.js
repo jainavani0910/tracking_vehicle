@@ -4,8 +4,10 @@ const vehicleStore = require("../services/vehicleStore");
 let io;
 const subscribedSockets = new Map();
 
-// How often to push delta updates (ms)
-const DELTA_INTERVAL = 1000;
+
+
+const pendingUpdates = new Map();
+const SOCKET_BATCH_INTERVAL = 100;
 
 const initializeSocketServer = (server) => {
   io = new Server(server, {
@@ -60,23 +62,46 @@ const initializeSocketServer = (server) => {
   });
 
   vehicleStore.vehicleEvents.on("batch_updated", (delta) => {
-    if (subscribedSockets.size === 0 || delta.length === 0) return;
+    if (!delta || delta.length === 0) return;
 
-    for (const [socketId, { socket }] of subscribedSockets.entries()) {
-      if (!socket || socket.disconnected) {
-        subscribedSockets.delete(socketId);
-        continue;
-      }
-      try {
-        socket.emit("vehicleUpdates", delta);
-      } catch (err) {
-        console.error(
-          `[WebSocket] Delta dispatch failed for ${socketId}:`,
-          err.message,
-        );
-      }
-    }
+    delta.forEach((vehicle) => {
+      pendingUpdates.set(vehicle.id, vehicle);
+    });
   });
+
+  setInterval(() => {
+  if (
+    subscribedSockets.size === 0 ||
+    pendingUpdates.size === 0
+  ) {
+    return;
+  }
+
+  const updates = Array.from(
+    pendingUpdates.values()
+  );
+
+  pendingUpdates.clear();
+
+  for (const [socketId, { socket }] of subscribedSockets.entries()) {
+    if (!socket || socket.disconnected) {
+      subscribedSockets.delete(socketId);
+      continue;
+    }
+
+    try {
+      socket.emit(
+        "vehicleUpdates",
+        updates
+      );
+    } catch (err) {
+      console.error(
+        `[WebSocket] Batch dispatch failed for ${socketId}:`,
+        err.message
+      );
+    }
+  }
+}, SOCKET_BATCH_INTERVAL);
 
   return io;
 };
