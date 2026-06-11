@@ -3,6 +3,7 @@ import Map, { Source, Layer, NavigationControl } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useVehicleStore } from '../store/useVehicleStore';
 import VehiclePopup from './VehiclePopup';
+import { subscribeToViewport } from '../services/socket';
 import apiClient, { vehicleAPI } from '../services/api';
 import { logger } from '../utils/logger';
 
@@ -239,8 +240,19 @@ const MapView = () => {
   }, [updateVisibleVehicles]);
 
   const onMoveEnd = useCallback(() => {
-    updateVisibleVehicles();
-  }, [updateVisibleVehicles]);
+  if (mapRef.current) {
+    const bounds = mapRef.current.getMap().getBounds();
+
+    subscribeToViewport({
+      west: bounds.getWest(),
+      south: bounds.getSouth(),
+      east: bounds.getEast(),
+      north: bounds.getNorth(),
+    });
+  }
+
+  updateVisibleVehicles();
+}, [updateVisibleVehicles]);
 
   const onMouseEnter = useCallback(() => {
     if (mapRef.current) mapRef.current.getCanvas().style.cursor = 'pointer';

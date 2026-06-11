@@ -2,7 +2,7 @@ const { Pool } = require("pg");
 require("dotenv").config();
 
 // Use the local url for dev if not provided
-const POSTGRES_URL = process.env.POSTGRES_URL || "postgres://postgres:avani_0909@localhost:5432/vehicle_db";
+const POSTGRES_URL = process.env.POSTGRES_URL || "postgres://postgres:Rakesh%40123@localhost:5432/vehicle_db";
 
 const pool = new Pool({
   connectionString: POSTGRES_URL,
