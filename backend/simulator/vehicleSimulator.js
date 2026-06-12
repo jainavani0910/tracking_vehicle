@@ -1,5 +1,5 @@
-const { sendVehicleBatch } = require('../kafka/producer');
-const vehicleStore = require('../services/vehicleStore');
+const { sendVehicleBatch } = require("../kafka/producer");
+const vehicleStore = require("../services/vehicleStore");
 
 const vehicles = new Map();
 const NUM_VEHICLES = 10000;
@@ -14,19 +14,59 @@ const WORLD = {
 };
 
 const DRIVERS = [
-  'James Carter', 'Maria Gonzalez', 'Michael Johnson', 'Emily Davis', 'Robert Wilson',
-  'Lucas Müller', 'Sophie Dubois', 'Marco Rossi', 'Anna Kowalski', 'Carlos García',
-  'Rajesh Kumar', 'Yuki Tanaka', 'Wei Zhang', 'Priya Singh', 'Ji-ho Kim',
-  'João Silva', 'Isabella Fernández', 'Mateus Oliveira', 'Valentina López', 'Diego Ramírez',
-  'Amara Diallo', 'Chidi Okonkwo', 'Fatima Benali', 'Kwame Asante', 'Zanele Dlamini',
-  'Omar Al-Rashid', 'Layla Hassan', 'Khalid Al-Farsi', 'Nour Ibrahim', 'Tariq Mansoor',
-  'Liam Murphy', 'Olivia Thompson', 'Noah Williams', 'Ava Robinson', 'Ethan Clarke',
-  'Siti Rahayu', 'Arjun Mehta', 'Thuy Nguyen', 'Budi Santoso', 'Aiko Yamamoto',
+  "James Carter",
+  "Maria Gonzalez",
+  "Michael Johnson",
+  "Emily Davis",
+  "Robert Wilson",
+  "Lucas Müller",
+  "Sophie Dubois",
+  "Marco Rossi",
+  "Anna Kowalski",
+  "Carlos García",
+  "Rajesh Kumar",
+  "Yuki Tanaka",
+  "Wei Zhang",
+  "Priya Singh",
+  "Ji-ho Kim",
+  "João Silva",
+  "Isabella Fernández",
+  "Mateus Oliveira",
+  "Valentina López",
+  "Diego Ramírez",
+  "Amara Diallo",
+  "Chidi Okonkwo",
+  "Fatima Benali",
+  "Kwame Asante",
+  "Zanele Dlamini",
+  "Omar Al-Rashid",
+  "Layla Hassan",
+  "Khalid Al-Farsi",
+  "Nour Ibrahim",
+  "Tariq Mansoor",
+  "Liam Murphy",
+  "Olivia Thompson",
+  "Noah Williams",
+  "Ava Robinson",
+  "Ethan Clarke",
+  "Siti Rahayu",
+  "Arjun Mehta",
+  "Thuy Nguyen",
+  "Budi Santoso",
+  "Aiko Yamamoto",
 ];
 
 const VEHICLE_TYPES = [
-  'Express Delivery', 'Logistics Hauler', 'Cargo Van', 'Eco-Courier', 'Urban Transit',
-  'Refrigerated Truck', 'Tanker', 'Flatbed', 'Mini Van', 'Bike Courier',
+  "Express Delivery",
+  "Logistics Hauler",
+  "Cargo Van",
+  "Eco-Courier",
+  "Urban Transit",
+  "Refrigerated Truck",
+  "Tanker",
+  "Flatbed",
+  "Mini Van",
+  "Bike Courier",
 ];
 
 const rnd = (min, max) => Math.random() * (max - min) + min;
@@ -43,14 +83,14 @@ const wrapLon = (lon) => {
 
 const getDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371e3; // metres
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1) * Math.PI/180;
-  const Δλ = (lon2-lon1) * Math.PI/180;
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ/2) * Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c; // in metres
 };
 
@@ -58,16 +98,17 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
 
 const initializeVehicles = () => {
   for (let idx = 0; idx < NUM_VEHICLES; idx++) {
-    const vehicleId = `vehicle-${String(idx).padStart(5, '0')}`;
+    const vehicleId = `vehicle-${String(idx).padStart(5, "0")}`;
     const type = VEHICLE_TYPES[idx % VEHICLE_TYPES.length];
 
     const statusRoll = Math.random();
-    const initialStatus = statusRoll > 0.85 ? (Math.random() > 0.5 ? 'idle' : 'stopped') : 'active';
-    const initialSpeed = initialStatus === 'active' ? rnd(15, 80) : 0;
+    const initialStatus =
+      statusRoll > 0.85 ? (Math.random() > 0.5 ? "idle" : "stopped") : "active";
+    const initialSpeed = initialStatus === "active" ? rnd(15, 80) : 0;
 
     vehicles.set(vehicleId, {
       id: vehicleId,
-      name: `${type} #${String(idx + 1).padStart(5, '0')}`,
+      name: `${type} #${String(idx + 1).padStart(5, "0")}`,
       latitude: rnd(WORLD.latMin, WORLD.latMax),
       longitude: rnd(WORLD.lonMin, WORLD.lonMax),
       speed: initialSpeed,
@@ -78,18 +119,20 @@ const initializeVehicles = () => {
       driver: DRIVERS[idx % DRIVERS.length],
       timestamp: new Date().toISOString(),
     });
-    
+
     // Initialize lastSent state for Dead Reckoning
     vehicles.get(vehicleId).lastSent = {
       latitude: vehicles.get(vehicleId).latitude,
       longitude: vehicles.get(vehicleId).longitude,
       speed: vehicles.get(vehicleId).speed,
       heading: vehicles.get(vehicleId).heading,
-      timeMs: Date.now()
+      timeMs: Date.now(),
     };
   }
 
-  console.log(`[Simulator] ✅ Initialized ${vehicles.size} vehicles randomly distributed across the world.`);
+  console.log(
+    `[Simulator] ✅ Initialized ${vehicles.size} vehicles randomly distributed across the world.`,
+  );
 };
 
 // ─── Per-tick Update ──────────────────────────────────────────────────────────
@@ -102,19 +145,19 @@ const updateVehiclePosition = (vehicle) => {
     const r = Math.random();
     const oldStatus = vehicle.status;
     if (r > 0.6) {
-      vehicle.status = 'active';
+      vehicle.status = "active";
       vehicle.speed = rnd(15, 80);
     } else if (r > 0.3) {
-      vehicle.status = 'idle';
+      vehicle.status = "idle";
       vehicle.speed = 0;
     } else {
-      vehicle.status = 'stopped';
+      vehicle.status = "stopped";
       vehicle.speed = 0;
     }
     if (oldStatus !== vehicle.status) changed = true;
   }
 
-  if (vehicle.status === 'active') {
+  if (vehicle.status === "active") {
     changed = true;
     // Speed fluctuation
     vehicle.speed += rnd(-5, 5);
@@ -135,21 +178,24 @@ const updateVehiclePosition = (vehicle) => {
     // Clamp latitude to Redis-safe bounds (bounce off poles)
     if (vehicle.latitude > WORLD.latMax || vehicle.latitude < WORLD.latMin) {
       vehicle.heading = 180 - vehicle.heading;
-      vehicle.latitude = clamp(vehicle.latitude, WORLD.latMin + 0.01, WORLD.latMax - 0.01);
+      vehicle.latitude = clamp(
+        vehicle.latitude,
+        WORLD.latMin + 0.01,
+        WORLD.latMax - 0.01,
+      );
     }
 
     // Wrap longitude around the date-line instead of bouncing
     vehicle.longitude = wrapLon(vehicle.longitude);
 
     // Minor heading drift
-    if (Math.random() > 0.9) {
-      vehicle.heading += rnd(-15, 15);
-      vehicle.heading = ((vehicle.heading % 360) + 360) % 360;
-    }
+    // More realistic steering
+    vehicle.heading += rnd(-8, 8);
+    vehicle.heading = ((vehicle.heading % 360) + 360) % 360;
   }
 
   // Battery & fuel depletion (low probability to keep values sane)
-  if (vehicle.status !== 'stopped' && Math.random() > 0.97) {
+  if (vehicle.status !== "stopped" && Math.random() > 0.97) {
     vehicle.fuel = Math.max(0, vehicle.fuel - 1);
     vehicle.battery = Math.max(0, vehicle.battery - 1);
     // Auto-refuel mock
@@ -181,10 +227,15 @@ const startSimulation = () => {
 
     vehicles.forEach((vehicle) => {
       updateVehiclePosition(vehicle);
-      
+
       const lastSent = vehicle.lastSent;
-      
-      const distance = getDistance(vehicle.latitude, vehicle.longitude, lastSent.latitude, lastSent.longitude);
+
+      const distance = getDistance(
+        vehicle.latitude,
+        vehicle.longitude,
+        lastSent.latitude,
+        lastSent.longitude,
+      );
       let headingDiff = Math.abs(vehicle.heading - lastSent.heading);
       if (headingDiff > 180) headingDiff = 360 - headingDiff; // Handle wrap around
       const speedDiff = Math.abs(vehicle.speed - lastSent.speed);
@@ -201,14 +252,14 @@ const startSimulation = () => {
         const payload = { ...vehicle };
         delete payload.lastSent;
         batch.push(payload);
-        
+
         // Update lastSent
         vehicle.lastSent = {
           latitude: vehicle.latitude,
           longitude: vehicle.longitude,
           speed: vehicle.speed,
           heading: vehicle.heading,
-          timeMs: now
+          timeMs: now,
         };
       }
     });
@@ -220,10 +271,11 @@ const startSimulation = () => {
       // ② Fire-and-forget to Kafka (silently ignored if broker unavailable)
       sendVehicleBatch(batch);
     }
-
   }, UPDATE_INTERVAL);
 
-  console.log(`[Simulator] 🚀 Simulation running — ${NUM_VEHICLES} vehicles across the world updating every ${UPDATE_INTERVAL}ms`);
+  console.log(
+    `[Simulator] 🚀 Simulation running — ${NUM_VEHICLES} vehicles across the world updating every ${UPDATE_INTERVAL}ms`,
+  );
 };
 
 module.exports = { startSimulation };
