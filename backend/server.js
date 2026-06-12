@@ -38,8 +38,10 @@ app.get('/health', (req, res) => {
 });
 
 const startServer = () => {
-  // ① Start simulation immediately — in-memory store always works
-  startSimulation();
+  // ① Start simulation immediately if not disabled in environment
+  if (process.env.START_SIMULATOR !== 'false') {
+    startSimulation();
+  }
 
   // ② Listen on port immediately — no waiting for Kafka/Redis
   server.on('error', (err) => {

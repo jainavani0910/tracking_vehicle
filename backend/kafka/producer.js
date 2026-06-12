@@ -78,7 +78,7 @@ const sendVehicleBatch = async (vehicles) => {
       });
     }
   } catch (err) {
-    // silently fail or log it
+    console.error("[Kafka Producer] Error sending batch:", err.message);
   }
 };
 

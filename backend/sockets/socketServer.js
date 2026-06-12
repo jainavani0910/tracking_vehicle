@@ -1,13 +1,52 @@
 const { Server } = require("socket.io");
+const { createAdapter } = require("@socket.io/redis-adapter");
+const redisClient = require("../redis/redisClient");
 const vehicleStore = require("../services/vehicleStore");
 
 let io;
 const subscribedSockets = new Map();
-
-
-
 const pendingUpdates = new Map();
 const SOCKET_BATCH_INTERVAL = 100;
+
+// Helper to query Redis for vehicles in a bounding box
+const getVehiclesInBoundsFromRedis = async (bounds) => {
+  const { south, west, north, east } = bounds;
+  const centerLat = (south + north) / 2;
+  
+  // Handle longitude wrap-around for center
+  let centerLng = (west + east) / 2;
+  if (west > east) {
+    centerLng = (west + east + 360) / 2;
+    if (centerLng > 180) centerLng -= 360;
+  }
+
+  const width = haversineDistance(south, west, south, east) || 1;
+  const height = haversineDistance(south, west, north, west) || 1;
+
+  // Search in Redis using GEOSEARCH
+  const vehicleIds = await redisClient.geoSearch(
+    "vehicles",
+    { longitude: centerLng, latitude: centerLat },
+    { width, height, unit: "km" }
+  );
+
+  if (!vehicleIds || vehicleIds.length === 0) {
+    return [];
+  }
+
+  // Get details from Redis hash "vehicle_details"
+  const details = await redisClient.hmGet("vehicle_details", vehicleIds);
+  const result = [];
+  details.forEach((detail) => {
+    if (detail) {
+      try {
+        result.push(JSON.parse(detail));
+      } catch (_) {}
+    }
+  });
+
+  return result;
+};
 
 const initializeSocketServer = (server) => {
   io = new Server(server, {
@@ -18,28 +57,63 @@ const initializeSocketServer = (server) => {
     maxHttpBufferSize: 50 * 1024 * 1024, // 50 MB
   });
 
+  // Attach Redis adapter for horizontal scaling if Redis is connected
+  const setupRedisAdapter = async () => {
+    try {
+      const pubClient = redisClient;
+      const subClient = redisClient.duplicate();
+      await subClient.connect();
+      io.adapter(createAdapter(pubClient, subClient));
+      console.log("[Socket.IO] ✅ Redis adapter successfully integrated for horizontal scaling.");
+    } catch (err) {
+      console.warn("[Socket.IO] ⚠️ Failed to initialize Redis adapter, falling back to in-memory adapter:", err.message);
+    }
+  };
+
+  if (redisClient.isReady) {
+    setupRedisAdapter();
+  } else {
+    redisClient.on("ready", () => {
+      setupRedisAdapter();
+    });
+  }
+
   io.on("connection", (socket) => {
     console.log(`[WebSocket] Client connected: ${socket.id}`);
 
-    // ── Send full snapshot immediately so the map loads all vehicles at once ──
     console.log(
       `[WebSocket] Waiting for viewport subscription from ${socket.id}`,
     );
-    // Register for recurring delta updates
+    // Register for tracking connected sockets
     subscribedSockets.set(socket.id, { socket });
 
-    socket.on("subscribeToViewport", (bounds) => {
+    socket.on("subscribeToViewport", async (bounds) => {
       try {
         console.log(`[Viewport] Request from ${socket.id}`);
+        let vehicles = [];
 
-        const vehicles = vehicleStore.getVehiclesInBounds(
-          bounds.south,
-          bounds.west,
-          bounds.north,
-          bounds.east,
-        );
-
-        console.log(`[Viewport] Sending ${vehicles.length} vehicles`);
+        if (redisClient.isOpen && redisClient.isReady) {
+          try {
+            vehicles = await getVehiclesInBoundsFromRedis(bounds);
+            console.log(`[Viewport] Sending ${vehicles.length} vehicles from Redis`);
+          } catch (err) {
+            console.warn("[Viewport] Redis query failed, falling back to memory:", err.message);
+            vehicles = vehicleStore.getVehiclesInBounds(
+              bounds.south,
+              bounds.west,
+              bounds.north,
+              bounds.east,
+            );
+          }
+        } else {
+          vehicles = vehicleStore.getVehiclesInBounds(
+            bounds.south,
+            bounds.west,
+            bounds.north,
+            bounds.east,
+          );
+          console.log(`[Viewport] Sending ${vehicles.length} vehicles from memory fallback`);
+        }
 
         socket.emit("vehicleSnapshot", vehicles);
       } catch (err) {
@@ -70,38 +144,20 @@ const initializeSocketServer = (server) => {
   });
 
   setInterval(() => {
-  if (
-    subscribedSockets.size === 0 ||
-    pendingUpdates.size === 0
-  ) {
-    return;
-  }
-
-  const updates = Array.from(
-    pendingUpdates.values()
-  );
-
-  pendingUpdates.clear();
-
-  for (const [socketId, { socket }] of subscribedSockets.entries()) {
-    if (!socket || socket.disconnected) {
-      subscribedSockets.delete(socketId);
-      continue;
+    if (pendingUpdates.size === 0) {
+      return;
     }
 
+    const updates = Array.from(pendingUpdates.values());
+    pendingUpdates.clear();
+
+    // Broadcast globally to all clients via the Redis adapter
     try {
-      socket.emit(
-        "vehicleUpdates",
-        updates
-      );
+      io.emit("vehicleUpdates", updates);
     } catch (err) {
-      console.error(
-        `[WebSocket] Batch dispatch failed for ${socketId}:`,
-        err.message
-      );
+      console.error(`[WebSocket] Global broadcast failed:`, err.message);
     }
-  }
-}, SOCKET_BATCH_INTERVAL);
+  }, SOCKET_BATCH_INTERVAL);
 
   return io;
 };

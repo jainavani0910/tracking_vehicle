@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   redis:
     image: redis:7-alpine
@@ -61,7 +59,7 @@ services:
       - PORT=3000
       - REDIS_URL=redis://redis:6379
       - KAFKA_BROKERS=kafka:29092
-      - POSTGRES_URL=postgres://postgres:password@timescaledb:5432/vehicle_db
+      - POSTGRES_URL=postgres://postgres:avani_0909@timescaledb:5432/vehicle_db
     restart: unless-stopped
 
   frontend:

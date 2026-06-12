@@ -11,10 +11,11 @@ const TOPIC_NAME = "vehicle-updates";
 
 // RDP Buffer
 let rdpBuffer = new Map();
-const RDP_FLUSH_INTERVAL = 60000; // 60 seconds
+const RDP_FLUSH_INTERVAL = 10000; // 10 seconds
 const RDP_TOLERANCE = 0.0001; // Approx 11 meters at equator
 
 setInterval(() => {
+  console.log(`[RDP Interval] Running. rdpBuffer size: ${rdpBuffer.size}`);
   if (rdpBuffer.size === 0) return;
   const currentBuffer = rdpBuffer;
   rdpBuffer = new Map();
@@ -41,11 +42,12 @@ setInterval(() => {
   });
 
   if (allSimplifiedPoints.length > 0) {
-    insertVehicleLocationsBatch(allSimplifiedPoints).catch((err) => {
+    console.log(`[RDP] Attempting to insert ${allSimplifiedPoints.length} simplified points to TimescaleDB...`);
+    insertVehicleLocationsBatch(allSimplifiedPoints).then(() => {
+      console.log(`[RDP] ✅ Successfully inserted ${allSimplifiedPoints.length} points.`);
+    }).catch(err => {
       console.error("[TimescaleDB] RDP Bulk Insert Error:", err.message);
     });
-    // Optional debug log
-    // console.log(`[RDP] Simplified and inserted ${allSimplifiedPoints.length} points to TimescaleDB.`);
   }
 }, RDP_FLUSH_INTERVAL);
 
@@ -62,9 +64,8 @@ const kafka = new Kafka({
 });
 
 const consumer = kafka.consumer({
-  groupId: "vehicle-tracking-group",
-  groupInstanceId: process.env.CONSUMER_ID || `consumer-${process.pid}`,
-  sessionTimeout: 30000,
+  groupId: process.env.KAFKA_GROUP_ID || 'vehicle-tracking-group',
+  sessionTimeout: 30000, // Increase session timeout
   heartbeatInterval: 3000,
   allowAutoTopicCreation: false,
   maxWaitTimeInMs: 500,
@@ -90,7 +91,7 @@ const _runConsumer = async () => {
       try {
         await redisClient.del("vehicles");
         await redisClient.del("vehicle_details");
-      } catch (_) {}
+      } catch (_) { }
     }
 
     await consumer.subscribe({ topic: TOPIC_NAME, fromBeginning: false });
@@ -122,9 +123,9 @@ const _runConsumer = async () => {
       _restartTimer = setTimeout(async () => {
         try {
           await consumer.disconnect();
-        } catch (_) {}
+        } catch (_) { }
         _consumerConnected = false;
-        _runConsumer().catch(() => {}); // restart silently
+        _runConsumer().catch(() => { }); // restart silently
       }, delay);
     });
 
@@ -176,14 +177,17 @@ const _runConsumer = async () => {
 
             await pipeline.exec();
 
-            // Add to RDP buffer instead of inserting directly
             const vehiclesToInsert = chunk
               .map((msg) =>
                 msg.value ? JSON.parse(msg.value.toString()) : null,
               )
               .filter((v) => v !== null);
 
-            vehiclesToInsert.forEach((v) => {
+            // Update local in-memory store so it emits events locally and propagates to Socket.IO
+            vehicleStore.updateBatch(vehiclesToInsert);
+
+            // Add to RDP buffer instead of inserting directly
+            vehiclesToInsert.forEach(v => {
               if (!rdpBuffer.has(v.id)) rdpBuffer.set(v.id, []);
               rdpBuffer.get(v.id).push(v);
             });
@@ -222,7 +226,7 @@ const disconnectConsumer = async () => {
   try {
     await consumer.disconnect();
     _consumerConnected = false;
-  } catch (_) {}
+  } catch (_) { }
 };
 
 module.exports = { connectConsumer, disconnectConsumer };
