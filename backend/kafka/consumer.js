@@ -18,26 +18,30 @@ setInterval(() => {
   if (rdpBuffer.size === 0) return;
   const currentBuffer = rdpBuffer;
   rdpBuffer = new Map();
-  
+
   let allSimplifiedPoints = [];
-  
+
   currentBuffer.forEach((points, vehicleId) => {
     if (points.length === 0) return;
-    
+
     // Map points for simplify-js {x, y}
-    const mappedPoints = points.map(p => ({ x: Number(p.longitude), y: Number(p.latitude), original: p }));
-    
+    const mappedPoints = points.map((p) => ({
+      x: Number(p.longitude),
+      y: Number(p.latitude),
+      original: p,
+    }));
+
     // Run RDP
     const simplified = simplify(mappedPoints, RDP_TOLERANCE, true);
-    
+
     // Extract original payloads back
-    simplified.forEach(p => {
+    simplified.forEach((p) => {
       allSimplifiedPoints.push(p.original);
     });
   });
-  
+
   if (allSimplifiedPoints.length > 0) {
-    insertVehicleLocationsBatch(allSimplifiedPoints).catch(err => {
+    insertVehicleLocationsBatch(allSimplifiedPoints).catch((err) => {
       console.error("[TimescaleDB] RDP Bulk Insert Error:", err.message);
     });
     // Optional debug log
@@ -46,25 +50,26 @@ setInterval(() => {
 }, RDP_FLUSH_INTERVAL);
 
 const kafka = new Kafka({
-  clientId: 'vehicle-tracking-client',
+  clientId: "vehicle-tracking-client",
   brokers: KAFKA_BROKER.split(","),
   connectionTimeout: 10000, // Give it 10s to connect
-  requestTimeout: 30000,    // Give it 30s for requests
+  requestTimeout: 30000, // Give it 30s for requests
   retry: {
     initialRetryTime: 1000,
-    retries: 10
+    retries: 10,
   },
   logLevel: 1, // ERROR only
 });
 
-const consumer = kafka.consumer({ 
-  groupId: 'vehicle-tracking-group',
-  sessionTimeout: 30000, // Increase session timeout
+const consumer = kafka.consumer({
+  groupId: "vehicle-tracking-group",
+  groupInstanceId: process.env.CONSUMER_ID || `consumer-${process.pid}`,
+  sessionTimeout: 30000,
   heartbeatInterval: 3000,
   allowAutoTopicCreation: false,
   maxWaitTimeInMs: 500,
   minBytes: 1,
-  maxBytes: 10 * 1024 * 1024, // 10MB per fetch
+  maxBytes: 10 * 1024 * 1024,
 });
 let _consumerConnected = false;
 let _restartTimer = null;
@@ -85,7 +90,7 @@ const _runConsumer = async () => {
       try {
         await redisClient.del("vehicles");
         await redisClient.del("vehicle_details");
-      } catch (_) { }
+      } catch (_) {}
     }
 
     await consumer.subscribe({ topic: TOPIC_NAME, fromBeginning: false });
@@ -93,26 +98,33 @@ const _runConsumer = async () => {
 
     // Handle consumer crashes with auto-restart
     consumer.on(consumer.events.CRASH, async ({ payload }) => {
-      const errMsg = payload.error?.message || 'Unknown error';
+      const errMsg = payload.error?.message || "Unknown error";
       _consumerConnected = false;
 
       if (_restartAttempts >= MAX_RESTART_ATTEMPTS) {
-        console.warn(`[Kafka Consumer] ⚠️  Max restart attempts reached. Giving up — using in-memory store.`);
+        console.warn(
+          `[Kafka Consumer] ⚠️  Max restart attempts reached. Giving up — using in-memory store.`,
+        );
         return;
       }
 
       // Exponential backoff: 3s, 6s, 12s, ... capped at 60s
-      const delay = Math.min(BASE_RESTART_DELAY_MS * Math.pow(2, _restartAttempts), 60000);
+      const delay = Math.min(
+        BASE_RESTART_DELAY_MS * Math.pow(2, _restartAttempts),
+        60000,
+      );
       _restartAttempts++;
-      console.warn(`[Kafka Consumer] ⚠️  Crash (${errMsg.split('\n')[0]}). Restarting in ${delay}ms (attempt ${_restartAttempts}/${MAX_RESTART_ATTEMPTS})...`);
+      console.warn(
+        `[Kafka Consumer] ⚠️  Crash (${errMsg.split("\n")[0]}). Restarting in ${delay}ms (attempt ${_restartAttempts}/${MAX_RESTART_ATTEMPTS})...`,
+      );
 
       clearTimeout(_restartTimer);
       _restartTimer = setTimeout(async () => {
         try {
           await consumer.disconnect();
-        } catch (_) { }
+        } catch (_) {}
         _consumerConnected = false;
-        _runConsumer().catch(() => { }); // restart silently
+        _runConsumer().catch(() => {}); // restart silently
       }, delay);
     });
 
@@ -166,20 +178,26 @@ const _runConsumer = async () => {
 
             // Add to RDP buffer instead of inserting directly
             const vehiclesToInsert = chunk
-              .map(msg => msg.value ? JSON.parse(msg.value.toString()) : null)
-              .filter(v => v !== null);
+              .map((msg) =>
+                msg.value ? JSON.parse(msg.value.toString()) : null,
+              )
+              .filter((v) => v !== null);
 
-            vehiclesToInsert.forEach(v => {
+            vehiclesToInsert.forEach((v) => {
               if (!rdpBuffer.has(v.id)) rdpBuffer.set(v.id, []);
               rdpBuffer.get(v.id).push(v);
             });
 
             // Yield to the event loop so network I/O can happen
-            await new Promise(resolve => setImmediate(resolve));
+            await new Promise((resolve) => setImmediate(resolve));
             await heartbeat();
           }
         } catch (err) {
-          if (err.name === 'KafkaJSProtocolError' || err.message.includes('rebalancing') || err.message.includes('rejoin')) {
+          if (
+            err.name === "KafkaJSProtocolError" ||
+            err.message.includes("rebalancing") ||
+            err.message.includes("rejoin")
+          ) {
             throw err;
           }
           console.error("[Consumer Batch Error]", err);
@@ -204,7 +222,7 @@ const disconnectConsumer = async () => {
   try {
     await consumer.disconnect();
     _consumerConnected = false;
-  } catch (_) { }
+  } catch (_) {}
 };
 
 module.exports = { connectConsumer, disconnectConsumer };

@@ -29,7 +29,7 @@ const connectProducer = async () => {
       const topics = await admin.listTopics();
       if (!topics.includes(TOPIC_NAME)) {
         await admin.createTopics({
-          topics: [{ topic: TOPIC_NAME, numPartitions: 3, replicationFactor: 1 }],
+          topics: [{ topic: TOPIC_NAME, numPartitions: 12, replicationFactor: 1 }],
         });
         console.log(`[Kafka Admin] Topic "${TOPIC_NAME}" created.`);
       }
